@@ -9,29 +9,30 @@ import (
 )
 
 type Connection struct {
-	ID string `json:"id"`
+	ID             string `json:"id"`
+	ConnectedRepos string `json:"githubRepositoryUrl"`
 }
 
 type Response struct {
 	Value []Connection `json:"value"`
 }
 
-func main() {
-	fmt.Println("hi world, this is the gh-artado extension!")
+// function for outputting body of HTTP requests, takes an API URL as input
 
-	// Set up the basic authentication credentials
+func returnURlBody(operation, url string) string {
 	username := "alexdarr@gmail.com"
-	token := "AZURE PAT"
+	token := "r5zeftbdioarxxli2vztyv2pzmn2kmz2ouj5jtd2vvhsap4k4ioq"
 	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte(username+":"+token))
 
 	// Create the HTTP client
 	client := http.Client{}
 
+	fmt.Println(operation, url)
+
 	// Create the HTTP request
-	request, err := http.NewRequest("GET", "https://dev.azure.com/ursa-minus/ursa/_apis/githubconnections?api-version=7.1-preview", nil)
+	request, err := http.NewRequest(operation, url, nil)
 	if err != nil {
 		fmt.Println("Error creating request:", err)
-		return
 	}
 
 	// Add the authentication header to the request
@@ -40,7 +41,6 @@ func main() {
 	response, err := client.Do(request)
 	if err != nil {
 		fmt.Println("Error sending request:", err)
-		return
 	}
 	defer response.Body.Close()
 
@@ -48,27 +48,49 @@ func main() {
 	body, err := ioutil.ReadAll(response.Body)
 	if err != nil {
 		fmt.Println("Error reading response:", err)
-		return
 	}
 
-	// Print response body
-	fmt.Println(string(body))
+	return string(body)
+}
+
+func main() {
+	fmt.Println("hi world, this is the gh-artado extension!")
+
+	adoResponse := returnURlBody("GET", "https://dev.azure.com/ursa-minus/ursa/_apis/githubconnections?api-version=7.1-preview")
+
+	fmt.Println(adoResponse)
+
+	fmt.Println("test ^^ test")
 
 	// Parse JSON response
+
 	var jsonResponse Response
-	if err := json.Unmarshal(body, &jsonResponse); err != nil {
+
+	if err := json.Unmarshal([]byte(adoResponse), &jsonResponse); err != nil {
 		fmt.Println("Error parsing JSON:", err)
-		return
 	}
 
-	// Access the ID value
 	if len(jsonResponse.Value) > 0 {
 		connectionID := jsonResponse.Value[0].ID
 		fmt.Println("Connection ID:", connectionID)
+
+		// Get the list of repositories for the connection
+		connectedRepos := "https://dev.azure.com/ursa-minus/ursa/_apis/githubconnections/%s/repos?api-version=7.1-preview"
+		connectedReposUrl := fmt.Sprintf(connectedRepos, connectionID)
+
+		adoResponse := returnURlBody("GET", connectedReposUrl)
+
+		fmt.Println("adoResponse", adoResponse)
+
+		if err := json.Unmarshal([]byte(adoResponse), &jsonResponse); err != nil {
+			fmt.Println("Error parsing JSON:", err)
+		}
+
+		repoUrl := jsonResponse.Value[0].ConnectedRepos
+
+		fmt.Println("Connected repos:", repoUrl)
+
 	} else {
 		fmt.Println("No connections found")
 	}
-
-	// access the value of the first connection
-
 }
