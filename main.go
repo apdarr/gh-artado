@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -14,18 +16,31 @@ import (
 type Connection struct {
 	ID             string `json:"id"`
 	ConnectedRepos string `json:"githubRepositoryUrl"`
+	Name           string `json:"name"`
 }
 
 type Response struct {
 	Value []Connection `json:"value"`
 }
 
-// function for outputting body of HTTP requests, takes an API URL as input
+type GitHubRepository struct {
+	GitHubRepositoryUrl string `json:"gitHubRepositoryUrl"`
+}
 
+type ReposBatchRequest struct {
+	GitHubRepositoryUrls []GitHubRepository `json:"gitHubRepositoryUrls"`
+	OperationType        string             `json:"operationType"`
+}
+
+func getToken() string {
+	token := os.Getenv("ADO_TOKEN")
+	return token
+}
+
+// function for outputting body of HTTP requests, takes an API URL as input
 func returnURlBody(operation, url string) string {
 	username := "alexdarr@gmail.com"
-	token := "r5zeftbdioarxxli2vztyv2pzmn2kmz2ouj5jtd2vvhsap4k4ioq"
-	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte(username+":"+token))
+	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte(username+":"+getToken()))
 
 	// Create the HTTP client
 	client := http.Client{}
@@ -64,7 +79,7 @@ func _main() error {
 		Short: "gh artado",
 	}
 
-	repoOverride := rootCmd.PersistentFlags().StringP("repo", "R", "", "Repository to use in OWNER/REPO format")
+	repoOverride := rootCmd.PersistentFlags().StringP("repo", "r", "", "Repository to use in OWNER/REPO format")
 
 	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) (err error) {
 		if *repoOverride != "" {
@@ -75,21 +90,30 @@ func _main() error {
 		return
 	}
 
+	//var tokenValue string
 	listConnectionsCmd := &cobra.Command{
 		Use:   "list [flags]",
 		Short: "List GitHub connection IDs for a given Azure DevOps board",
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
-			fmt.Printf("Connection IDs:")
-			return
+			connectionID, err := runListConnections()
+			if err != nil {
+				return err
+			}
+			fmt.Printf("Connection ID: %s\n", connectionID)
+			return nil
 		},
 	}
 
+	// listConnectionsCmd.Flags().StringVarP(&tokenValue, "token", "t", "", "Azure DevOps Personal Access Token")
+
+	// Get the token value for later retrieval: tokenValue, _ := tokenCmd.Flags().GetString("token")
+
 	addRepoCmd := &cobra.Command{
-		Use:   "repo [flags]",
+		Use:   "add [flags]",
 		Short: "Add a repo to a given connection",
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
 			fmt.Printf("Added repo %s to connection\n", repo)
-			return
+			return runAddRepo(repoOverride)
 		},
 	}
 
@@ -103,44 +127,112 @@ func main() {
 	if err := _main(); err != nil {
 		fmt.Fprintln(os.Stderr, "X %s", err.Error())
 	}
+}
 
-	// fmt.Println("hi world, this is the gh-artado extension!")
+func runListConnections() (string, error) {
+	// handle error if token is not set
+	if getToken() == "" {
+		fmt.Errorf("must set ADO_TOKEN environment variable")
+	}
 
-	// adoResponse := returnURlBody("GET", "https://dev.azure.com/ursa-minus/ursa/_apis/githubconnections?api-version=7.1-preview")
+	adoResponse := returnURlBody("GET", "https://dev.azure.com/ursa-minus/ursa/_apis/githubconnections?api-version=7.1-preview")
 
-	// fmt.Println(adoResponse)
+	// Parse JSON response
 
-	// fmt.Println("test ^^ test")
+	var jsonResponse Response
 
-	// // Parse JSON response
+	if err := json.Unmarshal([]byte(adoResponse), &jsonResponse); err != nil {
+		return "", fmt.Errorf("error parsing JSON: %w", err)
+	}
 
-	// var jsonResponse Response
+	if len(jsonResponse.Value) > 0 {
+		connectionID := jsonResponse.Value[0].ID
+		repoName := jsonResponse.Value[0].Name
+		fmt.Println("Connection ID:", connectionID)
 
-	// if err := json.Unmarshal([]byte(adoResponse), &jsonResponse); err != nil {
-	// 	fmt.Println("Error parsing JSON:", err)
-	// }
+		// Get the list of repositories for the connection
+		connectedRepos := "https://dev.azure.com/ursa-minus/ursa/_apis/githubconnections/%s/repos?api-version=7.1-preview"
+		connectedReposUrl := fmt.Sprintf(connectedRepos, connectionID)
 
-	// if len(jsonResponse.Value) > 0 {
-	// 	connectionID := jsonResponse.Value[0].ID
-	// 	fmt.Println("Connection ID:", connectionID)
+		adoResponse := returnURlBody("GET", connectedReposUrl)
 
-	// 	// Get the list of repositories for the connection
-	// 	connectedRepos := "https://dev.azure.com/ursa-minus/ursa/_apis/githubconnections/%s/repos?api-version=7.1-preview"
-	// 	connectedReposUrl := fmt.Sprintf(connectedRepos, connectionID)
+		fmt.Println("adoResponse", adoResponse)
 
-	// 	adoResponse := returnURlBody("GET", connectedReposUrl)
+		//repoUrl := jsonResponse.Value[0].ConnectedRepos
 
-	// 	fmt.Println("adoResponse", adoResponse)
+		fmt.Println("Connected repos:", repoName)
 
-	// 	if err := json.Unmarshal([]byte(adoResponse), &jsonResponse); err != nil {
-	// 		fmt.Println("Error parsing JSON:", err)
-	// 	}
+		return connectionID, nil
 
-	// 	repoUrl := jsonResponse.Value[0].ConnectedRepos
+	} else {
+		return "", fmt.Errorf("no connections found")
+	}
+}
 
-	// 	fmt.Println("Connected repos:", repoUrl)
+func runAddRepo(repoOverride *string) error {
+	if repoOverride == nil || *repoOverride == "" {
+		return fmt.Errorf("must set --repo flag")
+	}
 
-	// } else {
-	// 	fmt.Println("No connections found")
-	// }
+	repo, err := repository.Parse(*repoOverride)
+	if err != nil {
+		return err
+	}
+
+	// Get the connection ID
+
+	connectionID, err := runListConnections()
+	if err != nil {
+		// Handle the error
+		fmt.Println("Error:", err)
+		return err
+	}
+
+	requestBody := ReposBatchRequest{
+		GitHubRepositoryUrls: []GitHubRepository{
+			{GitHubRepositoryUrl: *repoOverride},
+		},
+		OperationType: "add",
+	}
+
+	jsonBody, err := json.Marshal(requestBody)
+	if err != nil {
+		return err
+	}
+
+	// Add the repo to the connection using this endpoint (POST): https://dev.azure.com/{organization}/{project}/_apis/githubconnections/{connectionId}/reposBatch?api-version=7.1-preview
+	endpoint := "https://dev.azure.com/ursa-minus/ursa/_apis/githubconnections/%s/repos?api-version=7.1-preview"
+	endpoint = fmt.Sprintf(endpoint, connectionID)
+	request, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return err
+	}
+
+	// Set the content type header, as well as the authorization header
+	username := "alexdarr@gmail.com"
+	authHeader := "Basic " + base64.StdEncoding.EncodeToString([]byte(username+":"+getToken()))
+
+	request.Header.Set("Authorization", authHeader)
+	request.Header.Set("Content-Type", "application/json")
+
+	// Create the HTTP client
+	client := http.Client{}
+	resp, err := client.Do(request)
+
+	if err != nil {
+		return err
+	}
+
+	defer resp.Body.Close()
+
+	// Inform the user of the result
+
+	success := "Added %s to connection"
+	if resp.StatusCode == 200 {
+		fmt.Printf(success, repo)
+	} else {
+		fmt.Println("Error adding repo to connection")
+	}
+
+	return nil
 }
