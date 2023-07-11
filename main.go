@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
@@ -8,6 +9,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/cli/go-gh/v2/pkg/repository"
 	"github.com/spf13/cobra"
@@ -117,8 +119,26 @@ func _main() error {
 		},
 	}
 
+	addBulkReposCmd := &cobra.Command{
+		Use:   "add-bulk [flags]",
+		Short: "Specify a text file with a list of repos to add to a given connection",
+		RunE: func(cmd *cobra.Command, args []string) (err error) {
+			file, err := cmd.Flags().GetString("file")
+			if err != nil {
+				return fmt.Errorf("error retrieving file flag: %w", err)
+			}
+			if file == "" {
+				return fmt.Errorf("file flag is required")
+			}
+			return runAddBulkRepos(file)
+		},
+	}
+
+	addBulkReposCmd.Flags().StringP("file", "f", "", "Text file with a list of repos to add to a given connection")
+
 	rootCmd.AddCommand(listConnectionsCmd)
 	rootCmd.AddCommand(addRepoCmd)
+	rootCmd.AddCommand(addBulkReposCmd)
 
 	return rootCmd.Execute()
 }
@@ -148,6 +168,7 @@ func runListConnections() (string, error) {
 	if len(jsonResponse.Value) > 0 {
 		connectionID := jsonResponse.Value[0].ID
 		repoName := jsonResponse.Value[0].Name
+		repoName2 := jsonResponse.Value[0]
 		fmt.Println("Connection ID:", connectionID)
 
 		// Get the list of repositories for the connection
@@ -159,8 +180,10 @@ func runListConnections() (string, error) {
 		fmt.Println("adoResponse", adoResponse)
 
 		//repoUrl := jsonResponse.Value[0].ConnectedRepos
-
+		fmt.Println("connectedRepos full response", jsonResponse)
+		fmt.Println("Connected repos:", connectedReposUrl)
 		fmt.Println("Connected repos:", repoName)
+		fmt.Println("Connected repos:", repoName2)
 
 		return connectionID, nil
 
@@ -179,6 +202,8 @@ func runAddRepo(repoOverride *string) error {
 		return err
 	}
 
+	println("repo for runAddRepo", repo.Name)
+
 	// Get the connection ID
 
 	connectionID, err := runListConnections()
@@ -187,6 +212,8 @@ func runAddRepo(repoOverride *string) error {
 		fmt.Println("Error:", err)
 		return err
 	}
+
+	println("connectionID for runAddRepo", connectionID)
 
 	requestBody := ReposBatchRequest{
 		GitHubRepositoryUrls: []GitHubRepository{
@@ -203,6 +230,7 @@ func runAddRepo(repoOverride *string) error {
 	// Add the repo to the connection using this endpoint (POST): https://dev.azure.com/{organization}/{project}/_apis/githubconnections/{connectionId}/reposBatch?api-version=7.1-preview
 	endpoint := "https://dev.azure.com/ursa-minus/ursa/_apis/githubconnections/%s/repos?api-version=7.1-preview"
 	endpoint = fmt.Sprintf(endpoint, connectionID)
+	println("endpoint for runAddRepo", endpoint)
 	request, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return err
@@ -219,6 +247,8 @@ func runAddRepo(repoOverride *string) error {
 	client := http.Client{}
 	resp, err := client.Do(request)
 
+	println("resp for runAddRepo", resp)
+
 	if err != nil {
 		return err
 	}
@@ -232,6 +262,34 @@ func runAddRepo(repoOverride *string) error {
 		fmt.Printf(success, repo)
 	} else {
 		fmt.Println("Error adding repo to connection")
+	}
+
+	return nil
+}
+
+func runAddBulkRepos(txtFile string) error {
+	// Allows user to specify a text file with a list of repos to add to a given connection
+	file, err := os.Open(txtFile)
+	if err != nil {
+		return fmt.Errorf("error opening file: %w", err)
+	}
+	defer file.Close()
+
+	// Read the file into a byte slice
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		repoUrl := strings.TrimSpace(scanner.Text())
+		// call the runAddRepo function for each repo in the file
+
+		url := repoUrl
+		fmt.Println("Adding repo:", url)
+		if err := runAddRepo(&url); err != nil {
+			return err
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("error reading file: %w", err)
 	}
 
 	return nil
