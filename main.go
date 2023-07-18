@@ -12,17 +12,23 @@ import (
 	"strings"
 
 	"github.com/cli/go-gh/v2/pkg/repository"
+	"github.com/jedib0t/go-pretty/table"
 	"github.com/spf13/cobra"
 )
 
 type Connection struct {
-	ID             string `json:"id"`
-	ConnectedRepos string `json:"githubRepositoryUrl"`
-	Name           string `json:"name"`
+	ID                  string `json:"id"`
+	GitHubRepositoryUrl string `json:"gitHubRepositoryUrl"`
 }
 
 type Response struct {
-	Value []Connection `json:"value"`
+	Value []struct {
+		ID                string `json:"id"`
+		Name              string `json:"name"`
+		GitHubConnections []struct {
+			GitHubRepositoryUrl string `json:"gitHubRepositoryUrl"`
+		} `json:"gitHubConnections"`
+	} `json:"value"`
 }
 
 type GitHubRepository struct {
@@ -95,16 +101,26 @@ func _main() error {
 		return
 	}
 
-	//var tokenValue string
 	listConnectionsCmd := &cobra.Command{
 		Use:   "list [flags]",
 		Short: "List GitHub connection IDs for a given Azure DevOps board",
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
-			connectionID, err := runListConnections()
+			connections, err := runListConnections()
 			if err != nil {
 				return err
 			}
-			fmt.Printf("Connection ID: %s\n", connectionID)
+
+			// Print the table
+			tb1 := table.NewWriter()
+			tb1.SetOutputMirror(os.Stdout)
+			tb1.AppendHeader(table.Row{"Connection ID", "Repo Name"})
+
+			for _, connection := range connections {
+				tb1.AppendRow([]interface{}{connection.ID, connection.GitHubRepositoryUrl})
+			}
+
+			tb1.Render()
+
 			return nil
 		},
 	}
@@ -148,45 +164,47 @@ func main() {
 	}
 }
 
-func runListConnections() (string, error) {
+func runListConnections() ([]Connection, error) {
 	// handle error if token is not set
 	if getToken() == "" {
-		fmt.Errorf("must set ADO_TOKEN environment variable")
+		return nil, fmt.Errorf("must set ADO_TOKEN environment variable")
 	}
 
 	adoResponse := returnURlBody("GET", "https://dev.azure.com/ursa-minus/ursa/_apis/githubconnections?api-version=7.1-preview")
 
-	var jsonResponse Response
+	var jsonResponse struct {
+		Count int          `json:"count"`
+		Value []Connection `json:"value"`
+	}
 
 	if err := json.Unmarshal([]byte(adoResponse), &jsonResponse); err != nil {
-		return "", fmt.Errorf("error parsing JSON: %w", err)
+		return nil, fmt.Errorf("error parsing JSON: %w", err)
 	}
 
-	if len(jsonResponse.Value) > 0 {
-		connectionID := jsonResponse.Value[0].ID
-		// repoName := jsonResponse.Value[0].Name
-		// repoName2 := jsonResponse.Value[0]
-		fmt.Println("Connection ID:", connectionID)
+	for i, conn := range jsonResponse.Value {
+		connectedReposUrl := fmt.Sprintf("https://dev.azure.com/ursa-minus/ursa/_apis/githubconnections/%s/repos?api-version=7.1-preview", conn.ID)
+		connectedReposResponse := returnURlBody("GET", connectedReposUrl)
 
-		// Get the list of repositories for the connection
-		connectedRepos := "https://dev.azure.com/ursa-minus/ursa/_apis/githubconnections/%s/repos?api-version=7.1-preview"
-		connectedReposUrl := fmt.Sprintf(connectedRepos, connectionID)
+		var connectedRepos struct {
+			Value []struct {
+				GitHubRepositoryUrl string `json:"gitHubRepositoryUrl"`
+			} `json:"value"`
+		}
 
-		adoResponse := returnURlBody("GET", connectedReposUrl)
+		if err := json.Unmarshal([]byte(connectedReposResponse), &connectedRepos); err != nil {
+			return nil, fmt.Errorf("error parsing JSON: %w", err)
+		}
 
-		fmt.Println("adoResponse", adoResponse)
+		repoUrls := make([]string, 0, len(connectedRepos.Value))
 
-		// //repoUrl := jsonResponse.Value[0].ConnectedRepos
-		// fmt.Println("connectedRepos full response", jsonResponse)
-		// fmt.Println("Connected repos:", connectedReposUrl)
-		// fmt.Println("Connected repos:", repoName)
-		// fmt.Println("Connected repos:", repoName2)
+		for _, repo := range connectedRepos.Value {
+			repoUrls = append(repoUrls, repo.GitHubRepositoryUrl)
+		}
 
-		return connectionID, nil
-
-	} else {
-		return "", fmt.Errorf("no connections found")
+		jsonResponse.Value[i].GitHubRepositoryUrl = strings.Join(repoUrls, "\n")
 	}
+
+	return jsonResponse.Value, nil
 }
 
 func runAddRepo(repoOverride *string) error {
