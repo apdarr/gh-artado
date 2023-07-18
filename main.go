@@ -18,7 +18,12 @@ import (
 
 type Connection struct {
 	ID                  string `json:"id"`
+	Url                 string `json:"url"`
+	Repository          string `json:"repository"`
+	AccessToken         string `json:"accessToken"`
+	AuthorizationHeader string `json:"authorizationHeader"`
 	GitHubRepositoryUrl string `json:"gitHubRepositoryUrl"`
+	Name                string `json:"name"`
 }
 
 type Response struct {
@@ -113,12 +118,12 @@ func _main() error {
 			// Print the table
 			tb1 := table.NewWriter()
 			tb1.SetOutputMirror(os.Stdout)
-			tb1.AppendHeader(table.Row{"Connection ID", "Repo Name"})
+			tb1.AppendHeader(table.Row{"Connection ID", "Connection Name", "Repo Name"})
 
 			for _, connection := range connections {
-				tb1.AppendRow([]interface{}{connection.ID, connection.GitHubRepositoryUrl})
+				tb1.AppendRow([]interface{}{connection.ID, connection.Name, connection.GitHubRepositoryUrl})
 			}
-
+			tb1.SetStyle(table.StyleColoredDark)
 			tb1.Render()
 
 			return nil
@@ -182,6 +187,20 @@ func runListConnections() ([]Connection, error) {
 	}
 
 	for i, conn := range jsonResponse.Value {
+		connectionUrl := fmt.Sprintf("https://dev.azure.com/ursa-minus/ursa/_apis/githubconnections/%s/repos?api-version=7.1-preview", conn.ID)
+		connectionResponse := returnURlBody("GET", connectionUrl)
+
+		var connection struct {
+			Name string `json:"name"`
+		}
+
+		if err := json.Unmarshal([]byte(connectionResponse), &connection); err != nil {
+			return nil, fmt.Errorf("error parsing JSON: %w", err)
+		}
+
+		jsonResponse.Value[i].Name = connection.Name
+
+		// Get the list of respitories connected to the connection
 		connectedReposUrl := fmt.Sprintf("https://dev.azure.com/ursa-minus/ursa/_apis/githubconnections/%s/repos?api-version=7.1-preview", conn.ID)
 		connectedReposResponse := returnURlBody("GET", connectedReposUrl)
 
@@ -202,6 +221,7 @@ func runListConnections() ([]Connection, error) {
 		}
 
 		jsonResponse.Value[i].GitHubRepositoryUrl = strings.Join(repoUrls, "\n")
+		jsonResponse.Value[i].Name = conn.Name
 	}
 
 	return jsonResponse.Value, nil
