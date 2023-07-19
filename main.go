@@ -182,8 +182,6 @@ func runListConnections() ([]Connection, error) {
 
 	adoResponse := returnURlBody("GET", "https://dev.azure.com/ursa-minus/ursa/_apis/githubconnections?api-version=7.1-preview")
 
-	fmt.Println(adoResponse)
-
 	var jsonResponse struct {
 		Count int          `json:"count"`
 		Value []Connection `json:"value"`
@@ -193,17 +191,9 @@ func runListConnections() ([]Connection, error) {
 		return nil, fmt.Errorf("error parsing JSON: %w", err)
 	}
 
-	// Debug ado response
-	fmt.Println("---Debug--")
-	fmt.Println(jsonResponse)
-	fmt.Printf("The type of jsonResponse is %T\n", jsonResponse)
-	fmt.Println("-----")
-
 	for i, conn := range jsonResponse.Value {
 		connectionUrl := fmt.Sprintf("https://dev.azure.com/ursa-minus/ursa/_apis/githubconnections/%s/repos?api-version=7.1-preview", conn.ID)
 		connectionResponse := returnURlBody("GET", connectionUrl)
-
-		fmt.Println(connectionResponse)
 
 		var connection struct {
 			Name string `json:"name"`
