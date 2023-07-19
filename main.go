@@ -307,13 +307,9 @@ func runAddBulkRepos(txtFile string) error {
 	// Read the file into a byte slice
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		repoUrl := strings.TrimSpace(scanner.Text())
-		// call the runAddRepo function for each repo in the file
-
-		url := repoUrl
-		fmt.Println("Adding repo:", url)
-		if err := runAddRepo(&url); err != nil {
-			return err
+		repoUrl := scanner.Text()
+		if repoUrl != "" {
+			repos = append(repos, repoUrl)
 		}
 	}
 
@@ -321,5 +317,50 @@ func runAddBulkRepos(txtFile string) error {
 		return fmt.Errorf("error reading file: %w", err)
 	}
 
+	if len(repos) == 0 {
+		return fmt.Errorf("no repos found in file")
+	}
+
+	fmt.Printf("Adding %d repositories to connection %s\n", len(repos), connectionID)
+
+	// Add each repo to the connection
+
+	var addedRepos []string
+	var failedRepos []string
+
+	for _, repo := range repos {
+		err := runAddRepo(repo, connectionID)
+		if err != nil {
+			failedRepos = append(failedRepos, repo)
+		} else {
+			addedRepos = append(addedRepos, repo)
+		}
+	}
+
+	// Render the table of added repositories
+	if len(addedRepos) > 0 {
+		renderAddedReposTable(connectionID, addedRepos)
+	}
+
+	// Inform the user of any failed repositories
+	if len(failedRepos) > 0 {
+		fmt.Println("Failed to add the following repositories:")
+		for _, repo := range failedRepos {
+			fmt.Println(repo)
+		}
+	}
+
 	return nil
+}
+
+func renderAddedReposTable(connectionID string, addedRepos []string) {
+	// create a new table showing successfully adding repos to connection
+	tb1 := table.NewWriter()
+	tb1.SetOutputMirror(os.Stdout)
+	tb1.AppendHeader(table.Row{"Connection ID", "Repo Name (added)"})
+	for _, repo := range addedRepos {
+		tb1.AppendRow([]interface{}{connectionID, repo})
+	}
+	tb1.SetStyle(table.StyleColoredDark)
+	tb1.Render()
 }
