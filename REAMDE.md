@@ -20,3 +20,13 @@ Must also configure ADO:
 - Install the GitHub ADO app to your GitHub (or even to a single repo)
 - Set up a connection with GitHub in the ADO UI 
 - Add at least one GitHub repo to your 
+
+# Usage 
+
+## `gh artado list`
+
+List all ADO connections to GitHub repos.
+
+## `gh artado add --repo REPO -c CONNECTION_ID`
+
+Add a single GitHub repo to an ADO connection. For the `REPO` argument, you must provide the full repo URL. You can find the connection ID by running `gh artado list`.

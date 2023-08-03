@@ -130,7 +130,26 @@ func _main() error {
 				return fmt.Errorf("error retrieving connection flag: %w", err)
 			}
 
-			return runAddRepo(repoUrl, connectionID)
+			m, err := runAddRepo(repoUrl, connectionID)
+			if err != nil {
+				fmt.Println(err)
+				return err
+			}
+
+			tb1 := table.NewWriter()
+			tb1.SetOutputMirror(os.Stdout)
+			tb1.AppendHeader(table.Row{"Connection ID", "Repo Name (added)"})
+
+			for k, v := range m {
+				// Append the rows even though there's only one
+				tb1.AppendRow([]interface{}{k, v})
+			}
+
+			tb1.SetStyle(table.StyleColoredDark)
+			tb1.Render()
+			// Return nil as we're outputting the table
+			return nil
+
 		},
 	}
 
@@ -232,10 +251,10 @@ func runListConnections() ([]Connection, error) {
 	return jsonResponse.Value, nil
 }
 
-func runAddRepo(repoUrl string, connectionID string) error {
+func runAddRepo(repoUrl string, connectionID string) (map[string]string, error) {
 	// handle error if URL is nil
 	if repoUrl == "" {
-		return fmt.Errorf("must specify a repo URL")
+		return nil, fmt.Errorf("must specify a repo URL")
 	}
 
 	// Create the request body
@@ -257,12 +276,12 @@ func runAddRepo(repoUrl string, connectionID string) error {
 
 	requestBodyBytes, err := json.Marshal(requestBody)
 	if err != nil {
-		return fmt.Errorf("error encoding request body: %w", err)
+		return nil, fmt.Errorf("error encoding request body: %w", err)
 	}
 
 	if getToken() == "" {
 		// handle error if token is not set
-		return fmt.Errorf("must set ADO_TOKEN environment variable")
+		return nil, fmt.Errorf("must set ADO_TOKEN environment variable")
 	}
 
 	// Add the repo to the connection using this endpoint (POST): https://dev.azure.com/{organization}/{project}/_apis/githubconnections/{connectionId}/reposBatch?api-version=7.1-preview
@@ -270,7 +289,7 @@ func runAddRepo(repoUrl string, connectionID string) error {
 	endpoint = fmt.Sprintf(endpoint, connectionID)
 	request, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(requestBodyBytes))
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Set the content type header, as well as the authorization header
@@ -285,7 +304,7 @@ func runAddRepo(repoUrl string, connectionID string) error {
 	resp, err := client.Do(request)
 
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	defer resp.Body.Close()
@@ -293,20 +312,28 @@ func runAddRepo(repoUrl string, connectionID string) error {
 	// Inform the user of the result
 
 	if resp.StatusCode == 200 {
-		fmt.Printf("Added repo %s to connection %s\n", repoUrl, connectionID)
 
-		// create a new table showing successfully adding repo to connection
-		tb1 := table.NewWriter()
-		tb1.SetOutputMirror(os.Stdout)
-		tb1.AppendHeader(table.Row{"Connection ID", "Repo Name (added)"})
-		tb1.AppendRow([]interface{}{connectionID, repoUrl})
-		tb1.SetStyle(table.StyleColoredDark)
-		tb1.Render()
+		// return a map of the connection ID and the repo name that was added
+		m := make(map[string]string)
+		m[connectionID] = repoUrl
+
+		return m, nil
+
+		// fmt.Printf("Added repo %s to connection %s\n", repoUrl, connectionID)
+
+		// // create a new table showing successfully adding repo to connection
+		// tb1 := table.NewWriter()
+		// tb1.SetOutputMirror(os.Stdout)
+		// tb1.AppendHeader(table.Row{"Connection ID", "Repo Name (added)"})
+		// tb1.AppendRow([]interface{}{connectionID, repoUrl})
+		// tb1.SetStyle(table.StyleColoredDark)
+		// tb1.Render()
 	} else {
 		fmt.Println("Error adding repo to connection")
+		err := fmt.Errorf("failed to add repo %s to connection %s", repoUrl, connectionID)
+		return nil, err
 	}
 
-	return nil
 }
 
 func runAddBulkRepos(txtFile string, connectionID string) error {
@@ -344,7 +371,7 @@ func runAddBulkRepos(txtFile string, connectionID string) error {
 	var failedRepos []string
 
 	for _, repo := range repos {
-		err := runAddRepo(repo, connectionID)
+		_, err := runAddRepo(repo, connectionID)
 		if err != nil {
 			failedRepos = append(failedRepos, repo)
 		} else {
