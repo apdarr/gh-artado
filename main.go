@@ -170,7 +170,28 @@ func _main() error {
 				return fmt.Errorf("error retrieving connection flag: %w", err)
 			}
 
-			return runAddBulkRepos(file, connectionID)
+			reposSlice, _, err := runAddBulkRepos(file, connectionID)
+			if err != nil {
+				fmt.Println(err)
+				return err
+			}
+
+			tb1 := table.NewWriter()
+			tb1.SetOutputMirror(os.Stdout)
+			tb1.AppendHeader(table.Row{"Connection ID", "Repo Name (added)"})
+
+			// Loop through the slice of maps and then the key value pairs of each map
+			for _, m := range reposSlice {
+				for k, v := range m {
+					// Append the rows even though there's only one
+					tb1.AppendRow([]interface{}{k, v})
+				}
+			}
+
+			tb1.SetStyle(table.StyleColoredDark)
+			tb1.Render()
+			// Return nil as we're outputting the table
+			return nil
 		},
 	}
 
@@ -336,11 +357,22 @@ func runAddRepo(repoUrl string, connectionID string) (map[string]string, error) 
 
 }
 
-func runAddBulkRepos(txtFile string, connectionID string) error {
+func runAddBulkRepos(txtFile string, connectionID string) ([]map[string]string, []string, error) {
 	// Allows user to specify a text file with a list of repos to add to a given connection
 	file, err := os.Open(txtFile)
 	if err != nil {
-		return fmt.Errorf("error opening file: %w", err)
+		return nil, nil, fmt.Errorf("error opening file: %w", err)
+	}
+
+	// Get the file information
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return nil, nil, fmt.Errorf("error getting file info: %w", err)
+	}
+
+	// Make sure the file is not empty
+	if fileInfo.Size() == 0 {
+		return nil, nil, fmt.Errorf("file is empty")
 	}
 
 	defer file.Close()
@@ -357,60 +389,35 @@ func runAddBulkRepos(txtFile string, connectionID string) error {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("error scanning file: %w", err)
+		return nil, nil, fmt.Errorf("error scanning file: %w", err)
 	}
 
 	if len(repos) == 0 {
-		return fmt.Errorf("no repositories found in file")
+		return nil, nil, fmt.Errorf("no repositories found in file")
 	}
 
 	fmt.Printf("Adding %d repositories to connection %s\n", len(repos), connectionID)
 
 	// Add each repo to the connection
-	var addedRepos []string
+	//var addedRepos []string
+
+	// Create a slice of maps of successfully added repos
+	var addedRepos []map[string]string
 	var failedRepos []string
 
 	for _, repo := range repos {
-		_, err := runAddRepo(repo, connectionID)
+		m, err := runAddRepo(repo, connectionID)
 		if err != nil {
 			failedRepos = append(failedRepos, repo)
 		} else {
-			addedRepos = append(addedRepos, repo)
+			addedRepos = append(addedRepos, m)
 		}
 	}
 
 	// Render the table of added repositories
-	if len(addedRepos) > 0 {
-		renderAddedReposTable(connectionID, addedRepos)
-	}
-
-	// Inform the user of any failed repositories
 	if len(failedRepos) > 0 {
-		fmt.Println("Failed to add the following repositories:")
-		for _, repo := range failedRepos {
-			fmt.Println(repo)
-		}
+		return nil, failedRepos, fmt.Errorf("failed to add the following repos: %v", failedRepos)
 	}
 
-	if len(repos) == 0 {
-		return fmt.Errorf("no repos found in file")
-	}
-
-	fmt.Printf("Adding %d repositories to connection %s\n", len(repos), connectionID)
-
-	// Add each repo to the connection
-
-	return nil
-}
-
-func renderAddedReposTable(connectionID string, addedRepos []string) {
-	// create a new table showing successfully adding repos to connection
-	tb1 := table.NewWriter()
-	tb1.SetOutputMirror(os.Stdout)
-	tb1.AppendHeader(table.Row{"Connection ID", "Repo Name (added)"})
-	for _, repo := range addedRepos {
-		tb1.AppendRow([]interface{}{connectionID, repo})
-	}
-	tb1.SetStyle(table.StyleColoredDark)
-	tb1.Render()
+	return addedRepos, nil, nil
 }
