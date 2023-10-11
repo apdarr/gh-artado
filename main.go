@@ -202,11 +202,11 @@ func _main() error {
 		Use:   "output",
 		Short: "Output a YAML file with the list of connections and connected repos",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			data, err := outputConnectionFile()
+			_, err := outputConnectionFile()
 			if err != nil {
 				return err
 			}
-
+			return nil
 		},
 	}
 
