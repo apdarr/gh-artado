@@ -22,6 +22,9 @@
 # Go workspace file
 go.work
 
-# Repo config file 
-repos.txt
+# Ignore the /connections folder
+/connections
+
+# Ignore any text files in the main directory
+*.txt
 
