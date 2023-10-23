@@ -11,8 +11,11 @@ import (
 	"os"
 	"strings"
 
+	"log"
+
 	"github.com/jedib0t/go-pretty/table"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v2"
 )
 
 type Connection struct {
@@ -195,6 +198,18 @@ func _main() error {
 		},
 	}
 
+	outputConnectionFileCmd := &cobra.Command{
+		Use:   "output",
+		Short: "Output a YAML file with the list of connections and connected repos",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			_, err := outputConnectionFile()
+			if err != nil {
+				return err
+			}
+			return nil
+		},
+	}
+
 	addRepoCmd.Flags().StringP("repo", "r", "", "Repository URL to add to a given connection")
 	addRepoCmd.Flags().StringP("connection", "c", "", "Connection ID to add the repo to")
 
@@ -204,6 +219,7 @@ func _main() error {
 	rootCmd.AddCommand(listConnectionsCmd)
 	rootCmd.AddCommand(addRepoCmd)
 	rootCmd.AddCommand(addBulkReposCmd)
+	rootCmd.AddCommand(outputConnectionFileCmd)
 
 	return rootCmd.Execute()
 }
@@ -420,4 +436,25 @@ func runAddBulkRepos(txtFile string, connectionID string) ([]map[string]string, 
 	}
 
 	return addedRepos, nil, nil
+}
+
+func outputConnectionFile() (string, error) {
+	connections, err := runListConnections()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Marshal the connections to YAML
+	data, err := yaml.Marshal(&connections)
+	if err != nil {
+		log.Fatalf("error: %v", err)
+	}
+
+	// Write the YAML to a file
+	err = os.WriteFile("connections.yaml", data, 0644)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return string(data), nil
 }
