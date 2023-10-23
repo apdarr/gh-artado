@@ -22,3 +22,9 @@
 # Go workspace file
 go.work
 
+# Ignore the /connections folder
+/connections
+
+# Ignore any text files in the main directory
+*.txt
+

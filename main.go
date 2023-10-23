@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"log"
 
@@ -450,8 +451,15 @@ func outputConnectionFile() (string, error) {
 		log.Fatalf("error: %v", err)
 	}
 
-	// Write the YAML to a file
-	err = os.WriteFile("connections.yaml", data, 0644)
+	err = os.MkdirAll("connections", 0755)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	filename := fmt.Sprintf("connections/connections-%s.yaml", time.Now().Format("2006-01-02-15-04-05"))
+
+	// Write the YAML to a file.
+	err = os.WriteFile(filename, data, 0644)
 	if err != nil {
 		log.Fatal(err)
 	}
