@@ -457,5 +457,4 @@ func outputConnectionFile() (string, error) {
 	}
 
 	return string(data), nil
-
 }
