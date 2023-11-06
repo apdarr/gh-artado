@@ -29,6 +29,12 @@ type Connection struct {
 	Name                string `json:"name"`
 }
 
+type ConnectionFile struct {
+	ID                  string `yaml:"id"`
+	GitHubRepositoryUrl string `yaml:"githubrepositoryurl"`
+	Name                string `yaml:"name"`
+}
+
 type Response struct {
 	Value []struct {
 		ID                string `json:"id"`
@@ -445,8 +451,18 @@ func outputConnectionFile() (string, error) {
 		log.Fatal(err)
 	}
 
+	// Filter the connections
+	var filteredConnections []ConnectionFile
+	for _, c := range connections {
+		filteredConnections = append(filteredConnections, ConnectionFile{
+			ID:                  c.ID,
+			GitHubRepositoryUrl: c.GitHubRepositoryUrl,
+			Name:                c.Name,
+		})
+	}
+
 	// Marshal the connections to YAML
-	data, err := yaml.Marshal(&connections)
+	data, err := yaml.Marshal(&filteredConnections)
 	if err != nil {
 		log.Fatalf("error: %v", err)
 	}
@@ -466,3 +482,22 @@ func outputConnectionFile() (string, error) {
 
 	return string(data), nil
 }
+
+// // Consume a .yml file and add the repos to a new connection in ADO using the connection name as the key
+// func graftConnection(connFile string, connSource string, connTarget string) {
+// 	// read in the .yml file from connFile (path to file). Error if you the file is empty or malformed
+// 	// Unmarshal the YAML to a struct, grab all the repos using connSource as a key
+// 	// If the key cannot be found, return an error
+// 	// At the connSource key, fetch all repos in that file. Ensure that connTarget is active and then add them to connTarget.
+
+// 	// Read in the YAML file
+// 	yamlFile, err := os.ReadFile(connFile)
+
+// 	if err != nil {
+// 		log.Fatalf("error: %v", err)
+// 	}
+
+// 	// Unmarshal the YAML to a struct
+// 	var connections []Connection
+// 	err = yaml.Unmarshal(yamlFile, &connections)
+// }
