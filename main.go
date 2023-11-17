@@ -533,8 +533,6 @@ func graftConnection(connFile string) error {
 		log.Fatalf("error: %v", err)
 	}
 
-	fmt.Printf("The following repos will be added to connection %s:\n", connectedRepos)
-
 	// Create a string of the repo URLs.
 	// Grab the repo URLs from the connSource connection ID key and add them to the connTarget connection ID key
 	var repoSlice []string
