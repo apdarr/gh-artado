@@ -399,15 +399,6 @@ func runAddRepo(repoUrl string, connectionID string) (map[string]string, error) 
 
 		return m, nil
 
-		// fmt.Printf("Added repo %s to connection %s\n", repoUrl, connectionID)
-
-		// // create a new table showing successfully adding repo to connection
-		// tb1 := table.NewWriter()
-		// tb1.SetOutputMirror(os.Stdout)
-		// tb1.AppendHeader(table.Row{"Connection ID", "Repo Name (added)"})
-		// tb1.AppendRow([]interface{}{connectionID, repoUrl})
-		// tb1.SetStyle(table.StyleColoredDark)
-		// tb1.Render()
 	} else {
 		fmt.Println("Error adding repo to connection")
 		err := fmt.Errorf("failed to add repo %s to connection %s", repoUrl, connectionID)
@@ -456,9 +447,6 @@ func runAddBulkRepos(txtFile string, connectionID string) ([]map[string]string, 
 	}
 
 	fmt.Printf("Adding %d repositories to connection %s\n", len(repos), connectionID)
-
-	// Add each repo to the connection
-	//var addedRepos []string
 
 	// Create a slice of maps of successfully added repos
 	var addedRepos []map[string]string
@@ -539,6 +527,8 @@ func graftConnection(fileName string) ([]string, error) {
 
 	connSource := "3aa9d254-413a-4b53-a947-fcffb033f7ec"
 
+	connTarget := "3aa9d254-413a-4b53-a947-fcffb033f7ec"
+
 	var urls []string
 	for _, c := range connFile {
 		if c.ID == connSource {
@@ -547,5 +537,11 @@ func graftConnection(fileName string) ([]string, error) {
 		}
 	}
 
+	for _, url := range urls {
+		_, err := runAddRepo(url, connTarget)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return urls, nil
 }
