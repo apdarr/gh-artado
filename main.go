@@ -397,6 +397,8 @@ func runAddRepo(repoUrl string, connectionID string) (map[string]string, error) 
 		m := make(map[string]string)
 		m[connectionID] = repoUrl
 
+		fmt.Printf("Successfully added repo %s to connection %s\n", repoUrl, connectionID)
+
 		return m, nil
 
 	} else {
