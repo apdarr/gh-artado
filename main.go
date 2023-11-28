@@ -35,6 +35,13 @@ type ConnectionFile struct {
 	Name                string   `yaml:"name"`
 }
 
+// Used to store the data from the YAML file
+type ConnectionFileData struct {
+	ID                  string `yaml:"id"`
+	GitHubRepositoryUrl string `yaml:"githubrepositoryurl"`
+	Name                string `yaml:"name"`
+}
+
 type Response struct {
 	Value []struct {
 		ID                string `json:"id"`
@@ -220,7 +227,7 @@ func _main() error {
 	// To-do, add flags for file, target + source connections
 	graftConnectionCmd := &cobra.Command{
 		Use:   "graft",
-		Short: "graft the repositories from an expired connection to a newer connection",
+		Short: "Graft repositories from an expired connection to a newer connection",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			file, err := cmd.Flags().GetString("file")
 
@@ -231,7 +238,11 @@ func _main() error {
 				return fmt.Errorf("file flag is required")
 			}
 
-			err = graftConnection(file)
+			urls, err := graftConnection(file)
+
+			fmt.Printf("URLs: %v", urls)
+			fmt.Printf("URLS length: %v", len(urls))
+
 			if err != nil {
 				return err
 			}
@@ -512,60 +523,29 @@ func outputConnectionFile() (string, error) {
 // // Consume a .yml file and add the repos to a new connection in ADO using the connection name as the key
 // func graftConnection(connFile string, connSource string, connTarget string) error
 
-func graftConnection(connFile string) error {
-	// read in the .yml file from connFile (path to file). Error if you the file is empty or malformed
-	// Unmarshal the YAML to a struct, grab all the repos using connSource as a key
-	// If the key cannot be found, return an error
-	// At the connSource key, fetch all repos in that file. Ensure that connTarget is active and then add them to connTarget.
-
-	// Read in the YAML file
-	yamlFile, err := os.ReadFile(connFile)
-
+func graftConnection(fileName string) ([]string, error) {
+	// Read the yaml file
+	data, err := os.ReadFile(fileName)
 	if err != nil {
-		log.Fatalf("error: %v", err)
+		return nil, err
 	}
 
-	// Unmarshal the YAML to a struct. connectedRepos is a slice of ConnectionFile structs
-	var connectedRepos []ConnectionFile
-	err = yaml.Unmarshal(yamlFile, &connectedRepos)
-
+	// Unmarshal the yaml file
+	var connFile []ConnectionFileData
+	err = yaml.Unmarshal(data, &connFile)
 	if err != nil {
-		log.Fatalf("error: %v", err)
+		return nil, err
 	}
 
-	// Create a string of the repo URLs.
-	// Grab the repo URLs from the connSource connection ID key and add them to the connTarget connection ID key
-	var repoSlice []string
+	connSource := "3aa9d254-413a-4b53-a947-fcffb033f7ec"
 
-	connSource := "6f6969a7-26b0-4e02-b059-e715e0bd119c"
-
-	for _, c := range connectedRepos {
-		fmt.Printf("ID: %s, GitHubRepositoryUrl: %s, Name: %s\n", c.ID, c.GitHubRepositoryUrl, c.Name)
-
+	var urls []string
+	for _, c := range connFile {
 		if c.ID == connSource {
-			fmt.Printf("Found repo %s in connection ID %s\n", c.GitHubRepositoryUrl, c.ID)
-			fmt.Printf("length of c.GitHubRepositoryUrl: %d\n", len(c.GitHubRepositoryUrl))
-			fmt.Printf("Type of c.GitHubRepositoryUrl: %T\n", c.GitHubRepositoryUrl)
-			repoSlice = append(repoSlice, c.GitHubRepositoryUrl)
+			urls = strings.Split(c.GitHubRepositoryUrl, "\n")
+			break
 		}
 	}
 
-	// Print the map to stdout
-	fmt.Printf("The following repos will be added to connection:\n")
-	fmt.Println("----")
-	fmt.Printf("%v", repoSlice)
-	fmt.Printf("length of repoSlice: %d\n", len(repoSlice))
-
-	// Add the repos to the connTarget connection ID
-	// for _, v := range repoMap {
-	// 	fmt.Printf("Adding %s to connection %s\n", v, connTarget)
-	// 	_, err := runAddRepo(v, connTarget)
-	// 	if err != nil {
-	// 		log.Fatalf("error: %v", err)
-	// 	}
-	// 	fmt.Printf("Successfully added %s to connection %s\n", v, connTarget)
-	// }
-
-	return nil
-
+	return urls, nil
 }
