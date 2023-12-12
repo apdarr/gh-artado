@@ -499,7 +499,7 @@ func outputConnectionFile() (string, error) {
 		log.Fatal(err)
 	}
 
-	filename := fmt.Sprintf("connections/connections-%s.yaml", time.Now().Format("2006-01-02-15-04-05"))
+	filename := fmt.Sprintf("connections/connections-%s.yml", time.Now().Format("2006-01-02-15-04-05"))
 
 	// Write the YAML to a file.
 	err = os.WriteFile(filename, data, 0644)

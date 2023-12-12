@@ -1,0 +1,27 @@
+name: Run gh artado output
+
+on:
+  schedule:
+    - cron:  '0 0 * * *' # Runs every 24 hours
+
+jobs:
+  run-command:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Install gh-artado extension
+      run: gh extension install apdarr/gh-artado
+
+    - name: Run command
+      run: gh artado output
+
+    - name: Commit and push changes
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add .
+        git commit -m "Add generated .yaml file" 
+        git push
