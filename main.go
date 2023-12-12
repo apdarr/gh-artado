@@ -29,6 +29,19 @@ type Connection struct {
 	Name                string `json:"name"`
 }
 
+type ConnectionFile struct {
+	ID                  string   `yaml:"id"`
+	GitHubRepositoryUrl []string `yaml:"githubrepositoryurl"`
+	Name                string   `yaml:"name"`
+}
+
+// Used to store the data from the YAML file
+type ConnectionFileData struct {
+	ID                  string `yaml:"id"`
+	GitHubRepositoryUrl string `yaml:"githubrepositoryurl"`
+	Name                string `yaml:"name"`
+}
+
 type Response struct {
 	Value []struct {
 		ID                string `json:"id"`
@@ -211,16 +224,45 @@ func _main() error {
 		},
 	}
 
+	// To-do, add flags for file, target + source connections
+	graftConnectionCmd := &cobra.Command{
+		Use:   "graft",
+		Short: "Graft repositories from an expired connection to a newer connection",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			file, err := cmd.Flags().GetString("file")
+
+			if err != nil {
+				return fmt.Errorf("error retrieving file flag: %w", err)
+			}
+			if file == "" {
+				return fmt.Errorf("file flag is required")
+			}
+
+			urls, err := graftConnection(file)
+
+			fmt.Printf("URLs: %v", urls)
+			fmt.Printf("URLS length: %v", len(urls))
+
+			if err != nil {
+				return err
+			}
+			return nil
+		},
+	}
+
 	addRepoCmd.Flags().StringP("repo", "r", "", "Repository URL to add to a given connection")
 	addRepoCmd.Flags().StringP("connection", "c", "", "Connection ID to add the repo to")
 
 	addBulkReposCmd.Flags().StringP("file", "f", "", "Text file with a list of repos to add to a given connection")
 	addBulkReposCmd.Flags().StringP("connection", "c", "", "Connection ID to add the repos to")
 
+	graftConnectionCmd.Flags().StringP("file", "f", "", "YAML file with the list of connections and connected repos")
+
 	rootCmd.AddCommand(listConnectionsCmd)
 	rootCmd.AddCommand(addRepoCmd)
 	rootCmd.AddCommand(addBulkReposCmd)
 	rootCmd.AddCommand(outputConnectionFileCmd)
+	rootCmd.AddCommand(graftConnectionCmd)
 
 	return rootCmd.Execute()
 }
@@ -355,17 +397,10 @@ func runAddRepo(repoUrl string, connectionID string) (map[string]string, error) 
 		m := make(map[string]string)
 		m[connectionID] = repoUrl
 
+		fmt.Printf("Successfully added repo %s to connection %s\n", repoUrl, connectionID)
+
 		return m, nil
 
-		// fmt.Printf("Added repo %s to connection %s\n", repoUrl, connectionID)
-
-		// // create a new table showing successfully adding repo to connection
-		// tb1 := table.NewWriter()
-		// tb1.SetOutputMirror(os.Stdout)
-		// tb1.AppendHeader(table.Row{"Connection ID", "Repo Name (added)"})
-		// tb1.AppendRow([]interface{}{connectionID, repoUrl})
-		// tb1.SetStyle(table.StyleColoredDark)
-		// tb1.Render()
 	} else {
 		fmt.Println("Error adding repo to connection")
 		err := fmt.Errorf("failed to add repo %s to connection %s", repoUrl, connectionID)
@@ -415,9 +450,6 @@ func runAddBulkRepos(txtFile string, connectionID string) ([]map[string]string, 
 
 	fmt.Printf("Adding %d repositories to connection %s\n", len(repos), connectionID)
 
-	// Add each repo to the connection
-	//var addedRepos []string
-
 	// Create a slice of maps of successfully added repos
 	var addedRepos []map[string]string
 	var failedRepos []string
@@ -445,8 +477,19 @@ func outputConnectionFile() (string, error) {
 		log.Fatal(err)
 	}
 
+	// Filter the connections, meaning, make it marshable to YAML
+	var filteredConnections []ConnectionFile
+	for _, c := range connections {
+		urls := strings.Split(c.GitHubRepositoryUrl, "\n")
+		filteredConnections = append(filteredConnections, ConnectionFile{
+			ID:                  c.ID,
+			GitHubRepositoryUrl: urls,
+			Name:                c.Name,
+		})
+	}
+
 	// Marshal the connections to YAML
-	data, err := yaml.Marshal(&connections)
+	data, err := yaml.Marshal(&filteredConnections)
 	if err != nil {
 		log.Fatalf("error: %v", err)
 	}
@@ -456,7 +499,7 @@ func outputConnectionFile() (string, error) {
 		log.Fatal(err)
 	}
 
-	filename := fmt.Sprintf("connections/connections-%s.yaml", time.Now().Format("2006-01-02-15-04-05"))
+	filename := fmt.Sprintf("connections/connections-%s.yml", time.Now().Format("2006-01-02-15-04-05"))
 
 	// Write the YAML to a file.
 	err = os.WriteFile(filename, data, 0644)
@@ -465,4 +508,42 @@ func outputConnectionFile() (string, error) {
 	}
 
 	return string(data), nil
+}
+
+// // Consume a .yml file and add the repos to a new connection in ADO using the connection name as the key
+// func graftConnection(connFile string, connSource string, connTarget string) error
+
+func graftConnection(fileName string) ([]string, error) {
+	// Read the yaml file
+	data, err := os.ReadFile(fileName)
+	if err != nil {
+		return nil, err
+	}
+
+	// Unmarshal the yaml file
+	var connFile []ConnectionFileData
+	err = yaml.Unmarshal(data, &connFile)
+	if err != nil {
+		return nil, err
+	}
+
+	connSource := "3aa9d254-413a-4b53-a947-fcffb033f7ec"
+
+	connTarget := "3aa9d254-413a-4b53-a947-fcffb033f7ec"
+
+	var urls []string
+	for _, c := range connFile {
+		if c.ID == connSource {
+			urls = strings.Split(c.GitHubRepositoryUrl, "\n")
+			break
+		}
+	}
+
+	for _, url := range urls {
+		_, err := runAddRepo(url, connTarget)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return urls, nil
 }
