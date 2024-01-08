@@ -63,12 +63,26 @@ type ReposBatchRequest struct {
 
 func getToken() string {
 	token := os.Getenv("ADO_TOKEN")
+	if token == "" {
+		log.Fatal("ADO_TOKEN environment variable not set")
+	}
 	return token
 }
 
 func getUsername() string {
 	username := os.Getenv("ADO_USERNAME")
+	if username == "" {
+		log.Fatal("ADO_USERNAME environment variable not set")
+	}
 	return username
+}
+
+func getAdoProject() string {
+	project := os.Getenv("ADO_PROJECT")
+	if project == "" {
+		log.Fatal("ADO_PROJECT environment variable not set")
+	}
+	return project
 }
 
 // function for outputting body of HTTP requests, takes an API URL as input
@@ -104,6 +118,7 @@ func returnURlBody(operation, url string) string {
 }
 
 func _main() error {
+
 	rootCmd := &cobra.Command{
 		Use:   "artado <subcommand> [flags]",
 		Short: "gh artado",
@@ -268,18 +283,17 @@ func _main() error {
 }
 
 func main() {
+
 	if err := _main(); err != nil {
 		fmt.Fprintln(os.Stderr, "X %s", err.Error())
 	}
 }
 
 func runListConnections() ([]Connection, error) {
-	// handle error if token is not set
-	if getToken() == "" {
-		return nil, fmt.Errorf("must set ADO_TOKEN environment variable")
-	}
 
-	adoResponse := returnURlBody("GET", "https://dev.azure.com/ursa-minus/ursa/_apis/githubconnections?api-version=7.1-preview")
+	adoProject := getAdoProject()
+	endpoint := fmt.Sprintf("https://dev.azure.com/%s/githubconnections?api-version=7.1-preview", adoProject)
+	adoResponse := returnURlBody("GET", endpoint)
 
 	var jsonResponse struct {
 		Count int          `json:"count"`
@@ -291,7 +305,7 @@ func runListConnections() ([]Connection, error) {
 	}
 
 	for i, conn := range jsonResponse.Value {
-		connectionUrl := fmt.Sprintf("https://dev.azure.com/ursa-minus/ursa/_apis/githubconnections/%s/repos?api-version=7.1-preview", conn.ID)
+		connectionUrl := fmt.Sprintf("https://dev.azure.com/%s/_apis/githubconnections/%s/repos?api-version=7.1-preview", adoProject, conn.ID)
 		connectionResponse := returnURlBody("GET", connectionUrl)
 
 		var connection struct {
@@ -305,7 +319,8 @@ func runListConnections() ([]Connection, error) {
 		jsonResponse.Value[i].Name = connection.Name
 
 		// Get the list of respitories connected to the connection
-		connectedReposUrl := fmt.Sprintf("https://dev.azure.com/ursa-minus/ursa/_apis/githubconnections/%s/repos?api-version=7.1-preview", conn.ID)
+		adoProject := getAdoProject()
+		connectedReposUrl := fmt.Sprintf("https://dev.azure.com/%s/_apis/githubconnections/%s/repos?api-version=7.1-preview", adoProject, conn.ID)
 		connectedReposResponse := returnURlBody("GET", connectedReposUrl)
 
 		var connectedRepos struct {
@@ -359,14 +374,9 @@ func runAddRepo(repoUrl string, connectionID string) (map[string]string, error) 
 		return nil, fmt.Errorf("error encoding request body: %w", err)
 	}
 
-	if getToken() == "" {
-		// handle error if token is not set
-		return nil, fmt.Errorf("must set ADO_TOKEN environment variable")
-	}
-
 	// Add the repo to the connection using this endpoint (POST): https://dev.azure.com/{organization}/{project}/_apis/githubconnections/{connectionId}/reposBatch?api-version=7.1-preview
-	endpoint := "https://dev.azure.com/ursa-minus/ursa/_apis/githubconnections/%s/repos?api-version=7.1-preview"
-	endpoint = fmt.Sprintf(endpoint, connectionID)
+	adoProject := getAdoProject()
+	endpoint := fmt.Sprintf("https://dev.azure.com/%s/_apis/githubconnections/%s/repos?api-version=7.1-preview", adoProject, connectionID)
 	request, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(requestBodyBytes))
 	if err != nil {
 		return nil, err
