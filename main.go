@@ -21,12 +21,13 @@ import (
 
 type Connection struct {
 	ID                  string `json:"id"`
+	Name                string `json:"name"`
+	GitHubRepositoryUrl string `json:"gitHubRepositoryUrl"`
+	AuthorizationType   string `json:"authorizationType"`
+	IsConnectionValid   bool   `json:"isConnectionValid"`
 	Url                 string `json:"url"`
 	Repository          string `json:"repository"`
-	AccessToken         string `json:"accessToken"`
 	AuthorizationHeader string `json:"authorizationHeader"`
-	GitHubRepositoryUrl string `json:"gitHubRepositoryUrl"`
-	Name                string `json:"name"`
 }
 
 type ConnectionFile struct {
@@ -136,10 +137,10 @@ func _main() error {
 			// Print the table
 			tb1 := table.NewWriter()
 			tb1.SetOutputMirror(os.Stdout)
-			tb1.AppendHeader(table.Row{"Connection ID", "Connection Name", "Repo Name"})
+			tb1.AppendHeader(table.Row{"Connection ID", "Connection Name", "Connection Type", "Connected Repo(s)"})
 
 			for _, connection := range connections {
-				tb1.AppendRow([]interface{}{connection.ID, connection.Name, connection.GitHubRepositoryUrl})
+				tb1.AppendRow([]interface{}{connection.ID, connection.Name, connection.AuthorizationType, connection.GitHubRepositoryUrl})
 			}
 			tb1.SetStyle(table.StyleColoredDark)
 			tb1.Render()
@@ -314,14 +315,10 @@ func main() {
 }
 
 func runListConnections() ([]Connection, error) {
-
 	adoProject := getAdoProject()
 	endpoint := fmt.Sprintf("https://dev.azure.com/%s/_apis/githubconnections?api-version=7.1-preview", adoProject)
-	fmt.Printf("Endpoint: %s\n", endpoint)
 
 	adoResponse := returnURlBody("GET", endpoint)
-
-	fmt.Print(adoResponse)
 
 	var jsonResponse struct {
 		Count int          `json:"count"`
@@ -344,6 +341,7 @@ func runListConnections() ([]Connection, error) {
 			return nil, fmt.Errorf("error parsing JSON: %w", err)
 		}
 
+		// Assign the connection name field to the connection struct
 		jsonResponse.Value[i].Name = connection.Name
 
 		// Get the list of respitories connected to the connection
