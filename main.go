@@ -58,7 +58,8 @@ type GitHubRepository struct {
 	GitHubRepositoryUrl string `json:"gitHubRepositoryUrl"`
 }
 
-type ReposBatchRequest struct {
+// Define a struct for creating repos in bulk. The []GitHubRepositoryUrls is a slice of GitHubRepository structs defined above
+type RequestBodyAddRepo struct {
 	GitHubRepositoryUrls []GitHubRepository `json:"gitHubRepositoryUrls"`
 	OperationType        string             `json:"operationType"`
 }
@@ -321,6 +322,7 @@ func runListConnections() ([]Connection, error) {
 
 	adoResponse := returnURlBody("GET", endpoint)
 
+	// The Value field is an array of Connection structs
 	var jsonResponse struct {
 		Count int          `json:"count"`
 		Value []Connection `json:"value"`
@@ -350,6 +352,7 @@ func runListConnections() ([]Connection, error) {
 		connectedReposUrl := fmt.Sprintf("https://dev.azure.com/%s/_apis/githubconnections/%s/repos?api-version=7.1-preview", adoProject, conn.ID)
 		connectedReposResponse := returnURlBody("GET", connectedReposUrl)
 
+		// Define a struct to hold the connected repos in the response
 		var connectedRepos struct {
 			Value []struct {
 				GitHubRepositoryUrl string `json:"gitHubRepositoryUrl"`
@@ -360,12 +363,14 @@ func runListConnections() ([]Connection, error) {
 			return nil, fmt.Errorf("error parsing JSON: %w", err)
 		}
 
+		// Create a slice of the repo URLs, of length 0 and capacity of the number of repos connected to the connection
 		repoUrls := make([]string, 0, len(connectedRepos.Value))
 
 		for _, repo := range connectedRepos.Value {
 			repoUrls = append(repoUrls, repo.GitHubRepositoryUrl)
 		}
 
+		// For each i-th element in the returned body, capture the the repo URLs and assign them to the repoUrls slice
 		jsonResponse.Value[i].GitHubRepositoryUrl = strings.Join(repoUrls, "\n")
 		jsonResponse.Value[i].Name = conn.Name
 	}
@@ -379,16 +384,8 @@ func runAddRepo(repoUrl string, connectionID string) (map[string]string, error) 
 		return nil, fmt.Errorf("must specify a repo URL")
 	}
 
-	// Create the request body
-	requestBody := struct {
-		GitHubRepositoryUrls []struct {
-			GitHubRepositoryUrl string `json:"gitHubRepositoryUrl"`
-		} `json:"gitHubRepositoryUrls"`
-		OperationType string `json:"operationType"`
-	}{
-		GitHubRepositoryUrls: []struct {
-			GitHubRepositoryUrl string `json:"gitHubRepositoryUrl"`
-		}{
+	requestBody := RequestBodyAddRepo{
+		GitHubRepositoryUrls: []GitHubRepository{
 			{
 				GitHubRepositoryUrl: repoUrl,
 			},
@@ -404,6 +401,7 @@ func runAddRepo(repoUrl string, connectionID string) (map[string]string, error) 
 	// Add the repo to the connection using this endpoint (POST): https://dev.azure.com/{organization}/{project}/_apis/githubconnections/{connectionId}/reposBatch?api-version=7.1-preview
 	adoProject := getAdoProject()
 	endpoint := fmt.Sprintf("https://dev.azure.com/%s/_apis/githubconnections/%s/repos?api-version=7.1-preview", adoProject, connectionID)
+
 	request, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(requestBodyBytes))
 	if err != nil {
 		return nil, err
@@ -433,8 +431,6 @@ func runAddRepo(repoUrl string, connectionID string) (map[string]string, error) 
 		// return a map of the connection ID and the repo name that was added
 		m := make(map[string]string)
 		m[connectionID] = repoUrl
-
-		fmt.Printf("Successfully added repo %s to connection %s\n", repoUrl, connectionID)
 
 		return m, nil
 
