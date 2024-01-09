@@ -37,9 +37,9 @@ type ConnectionFile struct {
 
 // Used to store the data from the YAML file
 type ConnectionFileData struct {
-	ID                  string `yaml:"id"`
-	GitHubRepositoryUrl string `yaml:"githubrepositoryurl"`
-	Name                string `yaml:"name"`
+	ID                  string   `yaml:"id"`
+	GitHubRepositoryUrl []string `yaml:"githubrepositoryurl"`
+	Name                string   `yaml:"name"`
 }
 
 type Response struct {
@@ -242,21 +242,44 @@ func _main() error {
 	// To-do, add flags for file, target + source connections
 	graftConnectionCmd := &cobra.Command{
 		Use:   "graft",
-		Short: "Graft repositories from an expired connection to a newer connection",
+		Short: "Graft repositories from one connection to another connection",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			file, err := cmd.Flags().GetString("file")
+			if len(args) < 1 {
+				return fmt.Errorf("graft command requires a specified connections file")
+			}
 
+			// The .yml output file listing all connections and their repos
+			cFile := args[0]
+
+			fromFlag, err := cmd.Flags().GetString("from")
 			if err != nil {
-				return fmt.Errorf("error retrieving file flag: %w", err)
+				return fmt.Errorf("error retrieving from flag: %w", err)
 			}
-			if file == "" {
-				return fmt.Errorf("file flag is required")
+			if fromFlag == "" {
+				return fmt.Errorf("--from flag is required")
 			}
 
-			urls, err := graftConnection(file)
+			toFlag, err := cmd.Flags().GetString("to")
+			if err != nil {
+				return fmt.Errorf("error retrieving --to flag: %w", err)
+			}
+			if toFlag == "" {
+				return fmt.Errorf("--to flag is required")
+			}
 
-			fmt.Printf("URLs: %v", urls)
-			fmt.Printf("URLS length: %v", len(urls))
+			urls, err := graftConnection(cFile, fromFlag, toFlag)
+			if urls != nil {
+				// Print the table
+				tb1 := table.NewWriter()
+				tb1.SetOutputMirror(os.Stdout)
+				tb1.AppendHeader(table.Row{fmt.Sprintf("Repos Grafted to Connection ID %s", toFlag)})
+
+				for _, url := range urls {
+					tb1.AppendRow([]interface{}{url})
+				}
+				tb1.SetStyle(table.StyleColoredDark)
+				tb1.Render()
+			}
 
 			if err != nil {
 				return err
@@ -271,7 +294,8 @@ func _main() error {
 	addBulkReposCmd.Flags().StringP("file", "f", "", "Text file with a list of repos to add to a given connection")
 	addBulkReposCmd.Flags().StringP("connection", "c", "", "Connection ID to add the repos to")
 
-	graftConnectionCmd.Flags().StringP("file", "f", "", "YAML file with the list of connections and connected repos")
+	graftConnectionCmd.Flags().StringP("from", "f", "", "The connection ID to graft from, specified in the connections file")
+	graftConnectionCmd.Flags().StringP("to", "t", "", "The connection ID to graft to, specified in the connections file")
 
 	rootCmd.AddCommand(listConnectionsCmd)
 	rootCmd.AddCommand(addRepoCmd)
@@ -292,8 +316,12 @@ func main() {
 func runListConnections() ([]Connection, error) {
 
 	adoProject := getAdoProject()
-	endpoint := fmt.Sprintf("https://dev.azure.com/%s/githubconnections?api-version=7.1-preview", adoProject)
+	endpoint := fmt.Sprintf("https://dev.azure.com/%s/_apis/githubconnections?api-version=7.1-preview", adoProject)
+	fmt.Printf("Endpoint: %s\n", endpoint)
+
 	adoResponse := returnURlBody("GET", endpoint)
+
+	fmt.Print(adoResponse)
 
 	var jsonResponse struct {
 		Count int          `json:"count"`
@@ -523,9 +551,9 @@ func outputConnectionFile() (string, error) {
 // // Consume a .yml file and add the repos to a new connection in ADO using the connection name as the key
 // func graftConnection(connFile string, connSource string, connTarget string) error
 
-func graftConnection(fileName string) ([]string, error) {
+func graftConnection(cFile string, fromFlag string, toFlag string) ([]string, error) {
 	// Read the yaml file
-	data, err := os.ReadFile(fileName)
+	data, err := os.ReadFile(cFile)
 	if err != nil {
 		return nil, err
 	}
@@ -537,20 +565,46 @@ func graftConnection(fileName string) ([]string, error) {
 		return nil, err
 	}
 
-	connSource := "3aa9d254-413a-4b53-a947-fcffb033f7ec"
-
-	connTarget := "3aa9d254-413a-4b53-a947-fcffb033f7ec"
+	// Prints debugging
+	// ******************************************************
+	// fmt.Printf("Grafting repos from connection %s to connection %s\n", fromFlag, toFlag)
+	// fmt.Printf("Found %d connections in file\n", len(connFile))
+	// // Print the connections in the file
+	// for _, c := range connFile {
+	// 	fmt.Printf("Connection ID: %s\n", c.ID)
+	// 	fmt.Printf("Connection Name: %s\n", c.Name)
+	// }
+	// ******************************************************
 
 	var urls []string
+
+	// Loop through the connections to collect a slice a repo URLs for grafting
+	// for _, c := range connFile {
+	// 	if c.ID == fromFlag {
+	// 		urls = strings.Split(c.GitHubRepositoryUrl, "\n")
+	// 		break
+	// 	}
+	// }
+	found := false
 	for _, c := range connFile {
-		if c.ID == connSource {
-			urls = strings.Split(c.GitHubRepositoryUrl, "\n")
+		//fmt.Printf("⭐️ looking for a match between %s and %s\n", c.ID, fromFlag)
+		if c.ID == fromFlag {
+			// fmt.Printf("Found connection ID %s\n", fromFlag)
+			// fmt.Printf("Repo URLs: %s\n", c.GitHubRepositoryUrl)
+			urls = c.GitHubRepositoryUrl
+			// exit the loop if we found the matching connection ID
+			found = true
 			break
 		}
 	}
 
+	if !found { // if we didn't find the connection ID, return an error
+		return nil, fmt.Errorf("connection ID %s not found in file", fromFlag)
+	}
+
+	// For those repos in the slice, add them to the target connection
 	for _, url := range urls {
-		_, err := runAddRepo(url, connTarget)
+		_, err := runAddRepo(url, toFlag)
 		if err != nil {
 			return nil, err
 		}
