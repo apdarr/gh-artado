@@ -32,14 +32,15 @@ type Connection struct {
 
 type ConnectionFile struct {
 	ID                  string   `yaml:"id"`
-	GitHubRepositoryUrl []string `yaml:"githubrepositoryurl"`
+	GitHubRepositoryUrl []string `yaml:"githubRepositoryUrl"`
 	Name                string   `yaml:"name"`
+	AuthorizationType   string   `yaml:"authorizationType"`
 }
 
 // Used to store the data from the YAML file
 type ConnectionFileData struct {
 	ID                  string   `yaml:"id"`
-	GitHubRepositoryUrl []string `yaml:"githubrepositoryurl"`
+	GitHubRepositoryUrl []string `yaml:"githubRepositoryUrl"`
 	Name                string   `yaml:"name"`
 }
 
@@ -521,6 +522,7 @@ func outputConnectionFile() (string, error) {
 			ID:                  c.ID,
 			GitHubRepositoryUrl: urls,
 			Name:                c.Name,
+			AuthorizationType:   c.AuthorizationType,
 		})
 	}
 
