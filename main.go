@@ -554,6 +554,10 @@ func graftConnection(cFile string, fromFlag string, toFlag string) ([]string, er
 		return nil, err
 	}
 
+	if fromFlag == toFlag {
+		return nil, fmt.Errorf("fromFlag and toFlag are the same. Please provide different connection IDs")
+	}
+
 	// Unmarshal the yaml file
 	var connFile []ConnectionFileData
 	err = yaml.Unmarshal(data, &connFile)
@@ -605,5 +609,42 @@ func graftConnection(cFile string, fromFlag string, toFlag string) ([]string, er
 			return nil, err
 		}
 	}
+	// Get a list of connections to verify that they've been added from the graft operation
+	connections, err := runListConnections()
+	if err != nil {
+		return nil, err
+	}
+
+	// Find the connection with the toFlag ID
+	var toConnection *Connection
+	for _, conn := range connections {
+		if conn.ID == toFlag {
+			toConnection = &conn
+			break
+		}
+	}
+
+	// If the toFlag connection wasn't found, return an error
+	if toConnection == nil {
+		return nil, fmt.Errorf("connection ID %s not found", toFlag)
+	}
+
+	// Check if all the repos in the URL slice are present in the toFlag connection
+	for _, url := range urls {
+		if !contains(toConnection.GitHubRepositoryUrl, url) {
+			return nil, fmt.Errorf("repo %s not found in connection %s", url, toFlag)
+		}
+	}
+
 	return urls, nil
+}
+
+func contains(slice []string, str string) bool {
+	for _, s := range slice {
+		if s == str {
+			return true
+		}
+	}
+
+	return false
 }
