@@ -565,34 +565,14 @@ func graftConnection(cFile string, fromFlag string, toFlag string) ([]string, er
 		return nil, err
 	}
 
-	// Prints debugging
-	// ******************************************************
-	// fmt.Printf("Grafting repos from connection %s to connection %s\n", fromFlag, toFlag)
-	// fmt.Printf("Found %d connections in file\n", len(connFile))
-	// // Print the connections in the file
-	// for _, c := range connFile {
-	// 	fmt.Printf("Connection ID: %s\n", c.ID)
-	// 	fmt.Printf("Connection Name: %s\n", c.Name)
-	// }
-	// ******************************************************
-
+	// Create an empty slice to hold the repo URLs if we find a match
 	var urls []string
-
-	// Loop through the connections to collect a slice a repo URLs for grafting
-	// for _, c := range connFile {
-	// 	if c.ID == fromFlag {
-	// 		urls = strings.Split(c.GitHubRepositoryUrl, "\n")
-	// 		break
-	// 	}
-	// }
+	// Create a bool to track if we found a match
 	found := false
+	// Loop through the connections file and collect the matching conn ID's repos in a slice
 	for _, c := range connFile {
-		//fmt.Printf("⭐️ looking for a match between %s and %s\n", c.ID, fromFlag)
 		if c.ID == fromFlag {
-			// fmt.Printf("Found connection ID %s\n", fromFlag)
-			// fmt.Printf("Repo URLs: %s\n", c.GitHubRepositoryUrl)
 			urls = c.GitHubRepositoryUrl
-			// exit the loop if we found the matching connection ID
 			found = true
 			break
 		}
@@ -609,42 +589,47 @@ func graftConnection(cFile string, fromFlag string, toFlag string) ([]string, er
 			return nil, err
 		}
 	}
+
+	// New functionality to verify that the repos were added to the connection
+
 	// Get a list of connections to verify that they've been added from the graft operation
-	connections, err := runListConnections()
-	if err != nil {
-		return nil, err
-	}
+	// connections, err := runListConnections()
+	// if err != nil {
+	// 	return nil, err
+	// }
 
-	// Find the connection with the toFlag ID
-	var toConnection *Connection
-	for _, conn := range connections {
-		if conn.ID == toFlag {
-			toConnection = &conn
-			break
-		}
-	}
+	// // Initialize a pointer to a connection struct
+	// var toConnection *Connection
+	// // Iterate over the connections structs slice and find the one with the toFlag ID
+	// for _, conn := range connections {
+	// 	if conn.ID == toFlag {
+	// 		toConnection = &conn
+	// 		break
+	// 	}
+	// }
 
-	// If the toFlag connection wasn't found, return an error
-	if toConnection == nil {
-		return nil, fmt.Errorf("connection ID %s not found", toFlag)
-	}
+	// // If the toFlag connection wasn't found, return an error
+	// if toConnection == nil {
+	// 	return nil, fmt.Errorf("connection ID %s not found", toFlag)
+	// }
 
-	// Check if all the repos in the URL slice are present in the toFlag connection
-	for _, url := range urls {
-		if !contains(toConnection.GitHubRepositoryUrl, url) {
-			return nil, fmt.Errorf("repo %s not found in connection %s", url, toFlag)
-		}
-	}
+	// // Split the connection's repo URLs into a slice
+	// toConnectionUrls := strings.Split(toConnection.GitHubRepositoryUrl, "\n")
+
+	// // Next, iterate through urls current present on the connection (toConnectionUrls)
+	// for _, url := range toConnectionUrls {
+	// 	found := false
+	// 	// For each repo URL, check to see if it's in the urls slice - in other words, check to see if it was added
+	// 	for _, repo := range urls {
+	// 		if repo == url {
+	// 			found = true
+	// 			break
+	// 		}
+	// 	}
+	// 	if !found {
+	// 		return nil, fmt.Errorf("repo %s not found in connection %s", url, toFlag)
+	// 	}
+	// }
 
 	return urls, nil
-}
-
-func contains(slice []string, str string) bool {
-	for _, s := range slice {
-		if s == str {
-			return true
-		}
-	}
-
-	return false
 }
