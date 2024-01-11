@@ -21,25 +21,27 @@ import (
 
 type Connection struct {
 	ID                  string `json:"id"`
+	Name                string `json:"name"`
+	GitHubRepositoryUrl string `json:"gitHubRepositoryUrl"`
+	AuthorizationType   string `json:"authorizationType"`
+	IsConnectionValid   bool   `json:"isConnectionValid"`
 	Url                 string `json:"url"`
 	Repository          string `json:"repository"`
-	AccessToken         string `json:"accessToken"`
 	AuthorizationHeader string `json:"authorizationHeader"`
-	GitHubRepositoryUrl string `json:"gitHubRepositoryUrl"`
-	Name                string `json:"name"`
 }
 
 type ConnectionFile struct {
 	ID                  string   `yaml:"id"`
-	GitHubRepositoryUrl []string `yaml:"githubrepositoryurl"`
+	GitHubRepositoryUrl []string `yaml:"githubRepositoryUrl"`
 	Name                string   `yaml:"name"`
+	AuthorizationType   string   `yaml:"authorizationType"`
 }
 
 // Used to store the data from the YAML file
 type ConnectionFileData struct {
-	ID                  string `yaml:"id"`
-	GitHubRepositoryUrl string `yaml:"githubrepositoryurl"`
-	Name                string `yaml:"name"`
+	ID                  string   `yaml:"id"`
+	GitHubRepositoryUrl []string `yaml:"githubRepositoryUrl"`
+	Name                string   `yaml:"name"`
 }
 
 type Response struct {
@@ -56,19 +58,34 @@ type GitHubRepository struct {
 	GitHubRepositoryUrl string `json:"gitHubRepositoryUrl"`
 }
 
-type ReposBatchRequest struct {
+// Define a struct for creating repos in bulk. The []GitHubRepositoryUrls is a slice of GitHubRepository structs defined above
+type RequestBodyAddRepo struct {
 	GitHubRepositoryUrls []GitHubRepository `json:"gitHubRepositoryUrls"`
 	OperationType        string             `json:"operationType"`
 }
 
 func getToken() string {
 	token := os.Getenv("ADO_TOKEN")
+	if token == "" {
+		log.Fatal("ADO_TOKEN environment variable not set")
+	}
 	return token
 }
 
 func getUsername() string {
 	username := os.Getenv("ADO_USERNAME")
+	if username == "" {
+		log.Fatal("ADO_USERNAME environment variable not set")
+	}
 	return username
+}
+
+func getAdoProject() string {
+	project := os.Getenv("ADO_PROJECT")
+	if project == "" {
+		log.Fatal("ADO_PROJECT environment variable not set")
+	}
+	return project
 }
 
 // function for outputting body of HTTP requests, takes an API URL as input
@@ -104,6 +121,7 @@ func returnURlBody(operation, url string) string {
 }
 
 func _main() error {
+
 	rootCmd := &cobra.Command{
 		Use:   "artado <subcommand> [flags]",
 		Short: "gh artado",
@@ -121,10 +139,10 @@ func _main() error {
 			// Print the table
 			tb1 := table.NewWriter()
 			tb1.SetOutputMirror(os.Stdout)
-			tb1.AppendHeader(table.Row{"Connection ID", "Connection Name", "Repo Name"})
+			tb1.AppendHeader(table.Row{"Connection ID", "Connection Name", "Connection Type", "Connected Repo(s)"})
 
 			for _, connection := range connections {
-				tb1.AppendRow([]interface{}{connection.ID, connection.Name, connection.GitHubRepositoryUrl})
+				tb1.AppendRow([]interface{}{connection.ID, connection.Name, connection.AuthorizationType, connection.GitHubRepositoryUrl})
 			}
 			tb1.SetStyle(table.StyleColoredDark)
 			tb1.Render()
@@ -227,21 +245,44 @@ func _main() error {
 	// To-do, add flags for file, target + source connections
 	graftConnectionCmd := &cobra.Command{
 		Use:   "graft",
-		Short: "Graft repositories from an expired connection to a newer connection",
+		Short: "Graft repositories from one connection to another connection",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			file, err := cmd.Flags().GetString("file")
+			if len(args) < 1 {
+				return fmt.Errorf("graft command requires a specified connections file")
+			}
 
+			// The .yml output file listing all connections and their repos
+			cFile := args[0]
+
+			fromFlag, err := cmd.Flags().GetString("from")
 			if err != nil {
-				return fmt.Errorf("error retrieving file flag: %w", err)
+				return fmt.Errorf("error retrieving from flag: %w", err)
 			}
-			if file == "" {
-				return fmt.Errorf("file flag is required")
+			if fromFlag == "" {
+				return fmt.Errorf("--from flag is required")
 			}
 
-			urls, err := graftConnection(file)
+			toFlag, err := cmd.Flags().GetString("to")
+			if err != nil {
+				return fmt.Errorf("error retrieving --to flag: %w", err)
+			}
+			if toFlag == "" {
+				return fmt.Errorf("--to flag is required")
+			}
 
-			fmt.Printf("URLs: %v", urls)
-			fmt.Printf("URLS length: %v", len(urls))
+			urls, err := graftConnection(cFile, fromFlag, toFlag)
+			if urls != nil {
+				// Print the table
+				tb1 := table.NewWriter()
+				tb1.SetOutputMirror(os.Stdout)
+				tb1.AppendHeader(table.Row{fmt.Sprintf("Repos Grafted to Connection ID %s", toFlag)})
+
+				for _, url := range urls {
+					tb1.AppendRow([]interface{}{url})
+				}
+				tb1.SetStyle(table.StyleColoredDark)
+				tb1.Render()
+			}
 
 			if err != nil {
 				return err
@@ -256,7 +297,8 @@ func _main() error {
 	addBulkReposCmd.Flags().StringP("file", "f", "", "Text file with a list of repos to add to a given connection")
 	addBulkReposCmd.Flags().StringP("connection", "c", "", "Connection ID to add the repos to")
 
-	graftConnectionCmd.Flags().StringP("file", "f", "", "YAML file with the list of connections and connected repos")
+	graftConnectionCmd.Flags().StringP("from", "f", "", "The connection ID to graft from, specified in the connections file")
+	graftConnectionCmd.Flags().StringP("to", "t", "", "The connection ID to graft to, specified in the connections file")
 
 	rootCmd.AddCommand(listConnectionsCmd)
 	rootCmd.AddCommand(addRepoCmd)
@@ -268,19 +310,19 @@ func _main() error {
 }
 
 func main() {
+
 	if err := _main(); err != nil {
 		fmt.Fprintln(os.Stderr, "X %s", err.Error())
 	}
 }
 
 func runListConnections() ([]Connection, error) {
-	// handle error if token is not set
-	if getToken() == "" {
-		return nil, fmt.Errorf("must set ADO_TOKEN environment variable")
-	}
+	adoProject := getAdoProject()
+	endpoint := fmt.Sprintf("https://dev.azure.com/%s/_apis/githubconnections?api-version=7.1-preview", adoProject)
 
-	adoResponse := returnURlBody("GET", "https://dev.azure.com/ursa-minus/ursa/_apis/githubconnections?api-version=7.1-preview")
+	adoResponse := returnURlBody("GET", endpoint)
 
+	// The Value field is an array of Connection structs
 	var jsonResponse struct {
 		Count int          `json:"count"`
 		Value []Connection `json:"value"`
@@ -291,7 +333,7 @@ func runListConnections() ([]Connection, error) {
 	}
 
 	for i, conn := range jsonResponse.Value {
-		connectionUrl := fmt.Sprintf("https://dev.azure.com/ursa-minus/ursa/_apis/githubconnections/%s/repos?api-version=7.1-preview", conn.ID)
+		connectionUrl := fmt.Sprintf("https://dev.azure.com/%s/_apis/githubconnections/%s/repos?api-version=7.1-preview", adoProject, conn.ID)
 		connectionResponse := returnURlBody("GET", connectionUrl)
 
 		var connection struct {
@@ -302,12 +344,15 @@ func runListConnections() ([]Connection, error) {
 			return nil, fmt.Errorf("error parsing JSON: %w", err)
 		}
 
+		// Assign the connection name field to the connection struct
 		jsonResponse.Value[i].Name = connection.Name
 
 		// Get the list of respitories connected to the connection
-		connectedReposUrl := fmt.Sprintf("https://dev.azure.com/ursa-minus/ursa/_apis/githubconnections/%s/repos?api-version=7.1-preview", conn.ID)
+		adoProject := getAdoProject()
+		connectedReposUrl := fmt.Sprintf("https://dev.azure.com/%s/_apis/githubconnections/%s/repos?api-version=7.1-preview", adoProject, conn.ID)
 		connectedReposResponse := returnURlBody("GET", connectedReposUrl)
 
+		// Define a struct to hold the connected repos in the response
 		var connectedRepos struct {
 			Value []struct {
 				GitHubRepositoryUrl string `json:"gitHubRepositoryUrl"`
@@ -318,12 +363,14 @@ func runListConnections() ([]Connection, error) {
 			return nil, fmt.Errorf("error parsing JSON: %w", err)
 		}
 
+		// Create a slice of the repo URLs, of length 0 and capacity of the number of repos connected to the connection
 		repoUrls := make([]string, 0, len(connectedRepos.Value))
 
 		for _, repo := range connectedRepos.Value {
 			repoUrls = append(repoUrls, repo.GitHubRepositoryUrl)
 		}
 
+		// For each i-th element in the returned body, capture the the repo URLs and assign them to the repoUrls slice
 		jsonResponse.Value[i].GitHubRepositoryUrl = strings.Join(repoUrls, "\n")
 		jsonResponse.Value[i].Name = conn.Name
 	}
@@ -337,16 +384,8 @@ func runAddRepo(repoUrl string, connectionID string) (map[string]string, error) 
 		return nil, fmt.Errorf("must specify a repo URL")
 	}
 
-	// Create the request body
-	requestBody := struct {
-		GitHubRepositoryUrls []struct {
-			GitHubRepositoryUrl string `json:"gitHubRepositoryUrl"`
-		} `json:"gitHubRepositoryUrls"`
-		OperationType string `json:"operationType"`
-	}{
-		GitHubRepositoryUrls: []struct {
-			GitHubRepositoryUrl string `json:"gitHubRepositoryUrl"`
-		}{
+	requestBody := RequestBodyAddRepo{
+		GitHubRepositoryUrls: []GitHubRepository{
 			{
 				GitHubRepositoryUrl: repoUrl,
 			},
@@ -359,14 +398,10 @@ func runAddRepo(repoUrl string, connectionID string) (map[string]string, error) 
 		return nil, fmt.Errorf("error encoding request body: %w", err)
 	}
 
-	if getToken() == "" {
-		// handle error if token is not set
-		return nil, fmt.Errorf("must set ADO_TOKEN environment variable")
-	}
-
 	// Add the repo to the connection using this endpoint (POST): https://dev.azure.com/{organization}/{project}/_apis/githubconnections/{connectionId}/reposBatch?api-version=7.1-preview
-	endpoint := "https://dev.azure.com/ursa-minus/ursa/_apis/githubconnections/%s/repos?api-version=7.1-preview"
-	endpoint = fmt.Sprintf(endpoint, connectionID)
+	adoProject := getAdoProject()
+	endpoint := fmt.Sprintf("https://dev.azure.com/%s/_apis/githubconnections/%s/repos?api-version=7.1-preview", adoProject, connectionID)
+
 	request, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(requestBodyBytes))
 	if err != nil {
 		return nil, err
@@ -396,8 +431,6 @@ func runAddRepo(repoUrl string, connectionID string) (map[string]string, error) 
 		// return a map of the connection ID and the repo name that was added
 		m := make(map[string]string)
 		m[connectionID] = repoUrl
-
-		fmt.Printf("Successfully added repo %s to connection %s\n", repoUrl, connectionID)
 
 		return m, nil
 
@@ -485,6 +518,7 @@ func outputConnectionFile() (string, error) {
 			ID:                  c.ID,
 			GitHubRepositoryUrl: urls,
 			Name:                c.Name,
+			AuthorizationType:   c.AuthorizationType,
 		})
 	}
 
@@ -513,11 +547,15 @@ func outputConnectionFile() (string, error) {
 // // Consume a .yml file and add the repos to a new connection in ADO using the connection name as the key
 // func graftConnection(connFile string, connSource string, connTarget string) error
 
-func graftConnection(fileName string) ([]string, error) {
+func graftConnection(cFile string, fromFlag string, toFlag string) ([]string, error) {
 	// Read the yaml file
-	data, err := os.ReadFile(fileName)
+	data, err := os.ReadFile(cFile)
 	if err != nil {
 		return nil, err
+	}
+
+	if fromFlag == toFlag {
+		return nil, fmt.Errorf("fromFlag and toFlag are the same. Please provide different connection IDs")
 	}
 
 	// Unmarshal the yaml file
@@ -527,23 +565,71 @@ func graftConnection(fileName string) ([]string, error) {
 		return nil, err
 	}
 
-	connSource := "3aa9d254-413a-4b53-a947-fcffb033f7ec"
-
-	connTarget := "3aa9d254-413a-4b53-a947-fcffb033f7ec"
-
+	// Create an empty slice to hold the repo URLs if we find a match
 	var urls []string
+	// Create a bool to track if we found a match
+	found := false
+	// Loop through the connections file and collect the matching conn ID's repos in a slice
 	for _, c := range connFile {
-		if c.ID == connSource {
-			urls = strings.Split(c.GitHubRepositoryUrl, "\n")
+		if c.ID == fromFlag {
+			urls = c.GitHubRepositoryUrl
+			found = true
 			break
 		}
 	}
 
+	if !found { // if we didn't find the connection ID, return an error
+		return nil, fmt.Errorf("connection ID %s not found in file", fromFlag)
+	}
+
+	// For those repos in the slice, add them to the target connection
 	for _, url := range urls {
-		_, err := runAddRepo(url, connTarget)
+		_, err := runAddRepo(url, toFlag)
 		if err != nil {
 			return nil, err
 		}
 	}
+
+	// New functionality to verify that the repos were added to the connection
+
+	// Get a list of connections to verify that they've been added from the graft operation
+	// connections, err := runListConnections()
+	// if err != nil {
+	// 	return nil, err
+	// }
+
+	// // Initialize a pointer to a connection struct
+	// var toConnection *Connection
+	// // Iterate over the connections structs slice and find the one with the toFlag ID
+	// for _, conn := range connections {
+	// 	if conn.ID == toFlag {
+	// 		toConnection = &conn
+	// 		break
+	// 	}
+	// }
+
+	// // If the toFlag connection wasn't found, return an error
+	// if toConnection == nil {
+	// 	return nil, fmt.Errorf("connection ID %s not found", toFlag)
+	// }
+
+	// // Split the connection's repo URLs into a slice
+	// toConnectionUrls := strings.Split(toConnection.GitHubRepositoryUrl, "\n")
+
+	// // Next, iterate through urls current present on the connection (toConnectionUrls)
+	// for _, url := range toConnectionUrls {
+	// 	found := false
+	// 	// For each repo URL, check to see if it's in the urls slice - in other words, check to see if it was added
+	// 	for _, repo := range urls {
+	// 		if repo == url {
+	// 			found = true
+	// 			break
+	// 		}
+	// 	}
+	// 	if !found {
+	// 		return nil, fmt.Errorf("repo %s not found in connection %s", url, toFlag)
+	// 	}
+	// }
+
 	return urls, nil
 }

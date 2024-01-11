@@ -13,8 +13,9 @@ This extension requires the [GitHub CLI](https://cli.github.com/) to be installe
 
 # Required env vars
 
-`ADO_USER` = your ADO username
-`ADO_PAT` = your ADO personal access token
+- `ADO_USER` = your ADO username
+- `ADO_PAT` = your ADO personal access token
+- `ADO_PROJECT` = the ADO project name in which your boards are located. For example, `fabrikam/fabric`
 
 Must also configure ADO: 
 - Install the GitHub ADO app to your GitHub (or even to a single repo)
