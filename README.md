@@ -8,9 +8,6 @@ What does the name mean? **a**dd-**r**epo-**t**o-**ado**: `artado`. Rhymes with 
 
 This extension requires the [GitHub CLI](https://cli.github.com/) to be installed.
 
-(TBD as this repo is still in private, since the APIs themselves are in private preview)
-
-
 # Required env vars
 
 - `ADO_USER` = your ADO username
